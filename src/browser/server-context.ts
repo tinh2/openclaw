@@ -198,9 +198,9 @@ function createProfileContext(
     const endpointUrl = new URL(appendCdpPath(profile.cdpUrl, "/json/new"));
     const endpoint = endpointUrl.search
       ? (() => {
-          endpointUrl.searchParams.set("url", url);
-          return endpointUrl.toString();
-        })()
+        endpointUrl.searchParams.set("url", url);
+        return endpointUrl.toString();
+      })()
       : `${endpointUrl.toString()}?${encoded}`;
     const created = await fetchJson<CdpTarget>(endpoint, 1500, {
       method: "PUT",
@@ -335,7 +335,7 @@ function createProfileContext(
     if (!profileState.running) {
       throw new Error(
         `Port ${profile.cdpPort} is in use for profile "${profile.name}" but not by openclaw. ` +
-          `Run action=reset-profile profile=${profile.name} to kill the process.`,
+        `Run action=reset-profile profile=${profile.name} to kill the process.`,
       );
     }
 
@@ -375,7 +375,7 @@ function createProfileContext(
       if (profile.driver === "extension") {
         throw new Error(
           `tab not found (no attached Chrome tabs for profile "${profile.name}"). ` +
-            "Click the OpenClaw Browser Relay toolbar icon on the tab you want to control (badge ON).",
+          "Click the OpenClaw Browser Relay toolbar icon on the tab you want to control (badge ON).",
         );
       }
       await openTab("about:blank");
@@ -503,7 +503,7 @@ function createProfileContext(
 
   const resetProfile = async () => {
     if (profile.driver === "extension") {
-      await stopChromeExtensionRelayServer({ cdpUrl: profile.cdpUrl }).catch(() => {});
+      await stopChromeExtensionRelayServer({ cdpUrl: profile.cdpUrl }).catch(() => { });
       return { moved: false, from: profile.cdpUrl };
     }
     if (!profile.cdpIsLoopback) {
@@ -579,8 +579,8 @@ export function createBrowserRouteContext(opts: ContextOptions): BrowserRouteCon
       const freshResolved = resolveBrowserConfig(freshCfg.browser, freshCfg);
       profile = resolveProfile(freshResolved, name);
       if (profile) {
-        // Merge new profile into cached state
-        current.resolved.profiles[name] = freshResolved.profiles[name];
+        // Replace entire resolved config to avoid stale fields (attachOnly, timeouts, etc.)
+        current.resolved = freshResolved;
       }
     }
 
