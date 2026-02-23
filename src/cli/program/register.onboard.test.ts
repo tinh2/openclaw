@@ -19,6 +19,10 @@ vi.mock("../../commands/onboard-provider-auth-flags.js", () => ({
       cliOption: "--mistral-api-key <key>",
       description: "Mistral API key",
     },
+    {
+      cliOption: "--cohere-api-key <key>",
+      description: "Cohere API key",
+    },
   ] as Array<{ cliOption: string; description: string }>,
 }));
 
@@ -113,6 +117,16 @@ describe("registerOnboardCommand", () => {
     expect(onboardCommandMock).toHaveBeenCalledWith(
       expect.objectContaining({
         mistralApiKey: "sk-mistral-test",
+      }),
+      runtime,
+    );
+  });
+
+  it("parses --cohere-api-key and forwards cohereApiKey", async () => {
+    await runCli(["onboard", "--cohere-api-key", "cohere-test-key"]);
+    expect(onboardCommandMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cohereApiKey: "cohere-test-key",
       }),
       runtime,
     );
