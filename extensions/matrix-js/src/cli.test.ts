@@ -5,6 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const bootstrapMatrixVerificationMock = vi.fn();
 const getMatrixRoomKeyBackupStatusMock = vi.fn();
 const getMatrixVerificationStatusMock = vi.fn();
+const matrixSetupApplyAccountConfigMock = vi.fn();
+const matrixSetupValidateInputMock = vi.fn();
+const matrixRuntimeLoadConfigMock = vi.fn();
+const matrixRuntimeWriteConfigFileMock = vi.fn();
 const restoreMatrixRoomKeyBackupMock = vi.fn();
 const setMatrixSdkLogModeMock = vi.fn();
 const verifyMatrixRecoveryKeyMock = vi.fn();
@@ -19,6 +23,24 @@ vi.mock("./matrix/actions/verification.js", () => ({
 
 vi.mock("./matrix/client/logging.js", () => ({
   setMatrixSdkLogMode: (...args: unknown[]) => setMatrixSdkLogModeMock(...args),
+}));
+
+vi.mock("./channel.js", () => ({
+  matrixPlugin: {
+    setup: {
+      applyAccountConfig: (...args: unknown[]) => matrixSetupApplyAccountConfigMock(...args),
+      validateInput: (...args: unknown[]) => matrixSetupValidateInputMock(...args),
+    },
+  },
+}));
+
+vi.mock("./runtime.js", () => ({
+  getMatrixRuntime: () => ({
+    config: {
+      loadConfig: (...args: unknown[]) => matrixRuntimeLoadConfigMock(...args),
+      writeConfigFile: (...args: unknown[]) => matrixRuntimeWriteConfigFileMock(...args),
+    },
+  }),
 }));
 
 let registerMatrixJsCli: typeof import("./cli.js").registerMatrixJsCli;
@@ -41,6 +63,10 @@ describe("matrix-js CLI verification commands", () => {
     ({ registerMatrixJsCli } = await import("./cli.js"));
     vi.spyOn(console, "log").mockImplementation(() => {});
     vi.spyOn(console, "error").mockImplementation(() => {});
+    matrixSetupValidateInputMock.mockReturnValue(null);
+    matrixSetupApplyAccountConfigMock.mockImplementation(({ cfg }: { cfg: unknown }) => cfg);
+    matrixRuntimeLoadConfigMock.mockReturnValue({});
+    matrixRuntimeWriteConfigFileMock.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -101,6 +127,89 @@ describe("matrix-js CLI verification commands", () => {
     });
 
     expect(process.exitCode).toBe(1);
+  });
+
+  it("adds a matrix-js account and prints a binding hint", async () => {
+    matrixRuntimeLoadConfigMock.mockReturnValue({ channels: {} });
+    matrixSetupApplyAccountConfigMock.mockImplementation(
+      ({ cfg, accountId }: { cfg: Record<string, unknown>; accountId: string }) => ({
+        ...cfg,
+        channels: {
+          ...(cfg.channels as Record<string, unknown> | undefined),
+          "matrix-js": {
+            accounts: {
+              [accountId]: {
+                homeserver: "https://matrix.example.org",
+              },
+            },
+          },
+        },
+      }),
+    );
+    const program = buildProgram();
+
+    await program.parseAsync(
+      [
+        "matrix-js",
+        "account",
+        "add",
+        "--account",
+        "Ops",
+        "--homeserver",
+        "https://matrix.example.org",
+        "--user-id",
+        "@ops:example.org",
+        "--password",
+        "secret",
+        "--register",
+        "on",
+      ],
+      { from: "user" },
+    );
+
+    expect(matrixSetupValidateInputMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        accountId: "ops",
+        input: expect.objectContaining({
+          homeserver: "https://matrix.example.org",
+          userId: "@ops:example.org",
+          password: "secret",
+        }),
+      }),
+    );
+    expect(matrixRuntimeWriteConfigFileMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        channels: {
+          "matrix-js": {
+            accounts: {
+              ops: expect.objectContaining({
+                homeserver: "https://matrix.example.org",
+                register: true,
+              }),
+            },
+          },
+        },
+      }),
+    );
+    expect(console.log).toHaveBeenCalledWith("Saved matrix-js account: ops");
+    expect(console.log).toHaveBeenCalledWith("Register mode: on");
+    expect(console.log).toHaveBeenCalledWith(
+      "Bind this account to an agent: openclaw agents bind --agent <id> --bind matrix-js:ops",
+    );
+  });
+
+  it("returns JSON errors for invalid account setup input", async () => {
+    matrixSetupValidateInputMock.mockReturnValue("Matrix requires --homeserver");
+    const program = buildProgram();
+
+    await program.parseAsync(["matrix-js", "account", "add", "--json"], {
+      from: "user",
+    });
+
+    expect(process.exitCode).toBe(1);
+    expect(console.log).toHaveBeenCalledWith(
+      expect.stringContaining('"error": "Matrix requires --homeserver"'),
+    );
   });
 
   it("keeps zero exit code for successful bootstrap in JSON mode", async () => {

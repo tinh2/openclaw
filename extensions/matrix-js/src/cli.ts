@@ -1,5 +1,11 @@
 import type { Command } from "commander";
-import { formatZonedTimestamp } from "openclaw/plugin-sdk";
+import {
+  DEFAULT_ACCOUNT_ID,
+  formatZonedTimestamp,
+  normalizeAccountId,
+  type ChannelSetupInput,
+} from "openclaw/plugin-sdk";
+import { matrixPlugin } from "./channel.js";
 import {
   bootstrapMatrixVerification,
   getMatrixRoomKeyBackupStatus,
@@ -8,6 +14,8 @@ import {
   verifyMatrixRecoveryKey,
 } from "./matrix/actions/verification.js";
 import { setMatrixSdkLogMode } from "./matrix/client/logging.js";
+import { getMatrixRuntime } from "./runtime.js";
+import type { CoreConfig } from "./types.js";
 
 let matrixJsCliExitScheduled = false;
 
@@ -54,6 +62,139 @@ function printTimestamp(label: string, value: string | null | undefined): void {
 
 function configureCliLogMode(verbose: boolean): void {
   setMatrixSdkLogMode(verbose ? "default" : "quiet");
+}
+
+function parseOptionalInt(value: string | undefined, fieldName: string): number | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  const parsed = Number.parseInt(trimmed, 10);
+  if (!Number.isFinite(parsed)) {
+    throw new Error(`${fieldName} must be an integer`);
+  }
+  return parsed;
+}
+
+function parseToggle(value: string | undefined, fieldName: string): boolean | undefined {
+  const trimmed = value?.trim().toLowerCase();
+  if (!trimmed) {
+    return undefined;
+  }
+  if (["on", "true", "1", "yes"].includes(trimmed)) {
+    return true;
+  }
+  if (["off", "false", "0", "no"].includes(trimmed)) {
+    return false;
+  }
+  throw new Error(`${fieldName} must be on|off`);
+}
+
+function applyRegisterFlag(
+  cfg: CoreConfig,
+  accountId: string,
+  register: boolean | undefined,
+): CoreConfig {
+  if (typeof register !== "boolean") {
+    return cfg;
+  }
+  const matrix = cfg.channels?.["matrix-js"] ?? {};
+  if (accountId === DEFAULT_ACCOUNT_ID) {
+    return {
+      ...cfg,
+      channels: {
+        ...(cfg.channels ?? {}),
+        "matrix-js": {
+          ...matrix,
+          register,
+        },
+      },
+    };
+  }
+  const account = matrix.accounts?.[accountId] ?? {};
+  return {
+    ...cfg,
+    channels: {
+      ...(cfg.channels ?? {}),
+      "matrix-js": {
+        ...matrix,
+        accounts: {
+          ...matrix.accounts,
+          [accountId]: {
+            ...account,
+            register,
+          },
+        },
+      },
+    },
+  };
+}
+
+type MatrixCliAccountAddResult = {
+  accountId: string;
+  configPath: string;
+  registerMode: boolean | undefined;
+  useEnv: boolean;
+};
+
+async function addMatrixJsAccount(params: {
+  account?: string;
+  name?: string;
+  homeserver?: string;
+  userId?: string;
+  accessToken?: string;
+  password?: string;
+  deviceName?: string;
+  initialSyncLimit?: string;
+  useEnv?: boolean;
+  register?: string;
+}): Promise<MatrixCliAccountAddResult> {
+  const runtime = getMatrixRuntime();
+  const cfg = runtime.config.loadConfig() as CoreConfig;
+  const accountId = normalizeAccountId(params.account);
+  const registerMode = parseToggle(params.register, "--register");
+  const setup = matrixPlugin.setup;
+  if (!setup?.applyAccountConfig) {
+    throw new Error("Matrix-js account setup is unavailable.");
+  }
+
+  const input: ChannelSetupInput = {
+    name: params.name,
+    homeserver: params.homeserver,
+    userId: params.userId,
+    accessToken: params.accessToken,
+    password: params.password,
+    deviceName: params.deviceName,
+    initialSyncLimit: parseOptionalInt(params.initialSyncLimit, "--initial-sync-limit"),
+    useEnv: params.useEnv === true,
+  };
+
+  const validationError = setup.validateInput?.({
+    cfg,
+    accountId,
+    input,
+  });
+  if (validationError) {
+    throw new Error(validationError);
+  }
+
+  const updated = setup.applyAccountConfig({
+    cfg,
+    accountId,
+    input,
+  }) as CoreConfig;
+  const next = applyRegisterFlag(updated, accountId, registerMode);
+  await runtime.config.writeConfigFile(next as never);
+
+  return {
+    accountId,
+    configPath:
+      accountId === DEFAULT_ACCOUNT_ID
+        ? "channels.matrix-js"
+        : `channels.matrix-js.accounts.${accountId}`,
+    registerMode,
+    useEnv: input.useEnv === true,
+  };
 }
 
 type MatrixCliCommandConfig<TResult> = {
@@ -350,6 +491,74 @@ export function registerMatrixJsCli(params: { program: Command }): void {
     .command("matrix-js")
     .description("Matrix-js channel utilities")
     .addHelpText("after", () => "\nDocs: https://docs.openclaw.ai/channels/matrix-js\n");
+
+  const account = root.command("account").description("Manage matrix-js channel accounts");
+
+  account
+    .command("add")
+    .description("Add or update a matrix-js account (wrapper around channel setup)")
+    .option("--account <id>", "Account ID (default: default)")
+    .option("--name <name>", "Optional display name for this account")
+    .option("--homeserver <url>", "Matrix homeserver URL")
+    .option("--user-id <id>", "Matrix user ID")
+    .option("--access-token <token>", "Matrix access token")
+    .option("--password <password>", "Matrix password")
+    .option("--device-name <name>", "Matrix device display name")
+    .option("--initial-sync-limit <n>", "Matrix initial sync limit")
+    .option("--use-env", "Use MATRIX_* env vars (default account only)")
+    .option("--register <on|off>", "Enable/disable register mode for password auth")
+    .option("--verbose", "Show setup details")
+    .option("--json", "Output as JSON")
+    .action(
+      async (options: {
+        account?: string;
+        name?: string;
+        homeserver?: string;
+        userId?: string;
+        accessToken?: string;
+        password?: string;
+        deviceName?: string;
+        initialSyncLimit?: string;
+        useEnv?: boolean;
+        register?: string;
+        verbose?: boolean;
+        json?: boolean;
+      }) => {
+        await runMatrixCliCommand({
+          verbose: options.verbose === true,
+          json: options.json === true,
+          run: async () =>
+            await addMatrixJsAccount({
+              account: options.account,
+              name: options.name,
+              homeserver: options.homeserver,
+              userId: options.userId,
+              accessToken: options.accessToken,
+              password: options.password,
+              deviceName: options.deviceName,
+              initialSyncLimit: options.initialSyncLimit,
+              useEnv: options.useEnv === true,
+              register: options.register,
+            }),
+          onText: (result) => {
+            console.log(`Saved matrix-js account: ${result.accountId}`);
+            console.log(`Config path: ${result.configPath}`);
+            if (typeof result.registerMode === "boolean") {
+              console.log(`Register mode: ${result.registerMode ? "on" : "off"}`);
+            }
+            console.log(
+              `Credentials source: ${result.useEnv ? "MATRIX_* env vars" : "inline config"}`,
+            );
+            const bindHint =
+              result.accountId === DEFAULT_ACCOUNT_ID
+                ? "openclaw agents bind --agent <id> --bind matrix-js"
+                : `openclaw agents bind --agent <id> --bind matrix-js:${result.accountId}`;
+            console.log(`Bind this account to an agent: ${bindHint}`);
+          },
+          errorPrefix: "Account setup failed",
+        });
+      },
+    );
 
   const verify = root.command("verify").description("Device verification for Matrix E2EE");
 
