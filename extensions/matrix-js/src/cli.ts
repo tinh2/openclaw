@@ -54,6 +54,8 @@ type MatrixCliBackupStatus = {
   trusted: boolean | null;
   matchesDecryptionKey: boolean | null;
   decryptionKeyCached: boolean | null;
+  keyLoadAttempted: boolean;
+  keyLoadError: string | null;
 };
 
 type MatrixCliVerificationStatus = {
@@ -78,8 +80,26 @@ function resolveBackupStatus(status: {
     trusted: status.backup?.trusted ?? null,
     matchesDecryptionKey: status.backup?.matchesDecryptionKey ?? null,
     decryptionKeyCached: status.backup?.decryptionKeyCached ?? null,
+    keyLoadAttempted: status.backup?.keyLoadAttempted ?? false,
+    keyLoadError: status.backup?.keyLoadError ?? null,
   };
 }
+
+type MatrixCliBackupIssueCode =
+  | "missing-server-backup"
+  | "key-load-failed"
+  | "key-not-loaded"
+  | "key-mismatch"
+  | "untrusted-signature"
+  | "inactive"
+  | "indeterminate"
+  | "ok";
+
+type MatrixCliBackupIssue = {
+  code: MatrixCliBackupIssueCode;
+  summary: string;
+  message: string | null;
+};
 
 function yesNoUnknown(value: boolean | null): string {
   if (value === true) {
@@ -97,76 +117,124 @@ function printBackupStatus(backup: MatrixCliBackupStatus): void {
   console.log(`Backup trusted by this device: ${yesNoUnknown(backup.trusted)}`);
   console.log(`Backup matches local decryption key: ${yesNoUnknown(backup.matchesDecryptionKey)}`);
   console.log(`Backup key cached locally: ${yesNoUnknown(backup.decryptionKeyCached)}`);
+  console.log(`Backup key load attempted: ${yesNoUnknown(backup.keyLoadAttempted)}`);
+  if (backup.keyLoadError) {
+    console.log(`Backup key load error: ${backup.keyLoadError}`);
+  }
 }
 
-function summarizeBackupHealth(backup: MatrixCliBackupStatus): string {
+function resolveBackupIssue(backup: MatrixCliBackupStatus): MatrixCliBackupIssue {
   if (!backup.serverVersion) {
-    return "missing on server";
-  }
-  if (backup.trusted === false || backup.matchesDecryptionKey === false) {
-    return "present but not trusted on this device";
-  }
-  if (!backup.activeVersion) {
-    return "present on server but inactive on this device";
-  }
-  return "active and trusted on this device";
-}
-
-function printBackupSummary(backup: MatrixCliBackupStatus): void {
-  console.log(`Backup: ${summarizeBackupHealth(backup)}`);
-  if (backup.serverVersion) {
-    console.log(`Backup version: ${backup.serverVersion}`);
-  }
-}
-
-function describeBackupIssue(backup: MatrixCliBackupStatus): string | null {
-  if (!backup.serverVersion) {
-    return "no room-key backup exists on the homeserver";
+    return {
+      code: "missing-server-backup",
+      summary: "missing on server",
+      message: "no room-key backup exists on the homeserver",
+    };
   }
   if (backup.decryptionKeyCached === false) {
-    return "backup decryption key is not loaded on this device";
+    if (backup.keyLoadError) {
+      return {
+        code: "key-load-failed",
+        summary: "present but backup key unavailable on this device",
+        message: `backup decryption key could not be loaded from secret storage (${backup.keyLoadError})`,
+      };
+    }
+    if (backup.keyLoadAttempted) {
+      return {
+        code: "key-not-loaded",
+        summary: "present but backup key unavailable on this device",
+        message:
+          "backup decryption key is not loaded on this device (secret storage did not return a key)",
+      };
+    }
+    return {
+      code: "key-not-loaded",
+      summary: "present but backup key unavailable on this device",
+      message: "backup decryption key is not loaded on this device",
+    };
   }
   if (backup.matchesDecryptionKey === false) {
-    return "backup key mismatch (this device does not have the matching backup decryption key)";
+    return {
+      code: "key-mismatch",
+      summary: "present but backup key mismatch on this device",
+      message: "backup key mismatch (this device does not have the matching backup decryption key)",
+    };
   }
   if (backup.trusted === false) {
-    return "backup signature chain is not trusted by this device";
+    return {
+      code: "untrusted-signature",
+      summary: "present but not trusted on this device",
+      message: "backup signature chain is not trusted by this device",
+    };
   }
   if (!backup.activeVersion) {
-    return "backup exists but is not active on this device";
+    return {
+      code: "inactive",
+      summary: "present on server but inactive on this device",
+      message: "backup exists but is not active on this device",
+    };
   }
   if (
     backup.trusted === null ||
     backup.matchesDecryptionKey === null ||
     backup.decryptionKeyCached === null
   ) {
-    return "backup trust state could not be fully determined";
+    return {
+      code: "indeterminate",
+      summary: "present but trust state unknown",
+      message: "backup trust state could not be fully determined",
+    };
   }
-  return null;
+  return {
+    code: "ok",
+    summary: "active and trusted on this device",
+    message: null,
+  };
+}
+
+function printBackupSummary(backup: MatrixCliBackupStatus): void {
+  const issue = resolveBackupIssue(backup);
+  console.log(`Backup: ${issue.summary}`);
+  if (backup.serverVersion) {
+    console.log(`Backup version: ${backup.serverVersion}`);
+  }
 }
 
 function buildVerificationGuidance(status: MatrixCliVerificationStatus): string[] {
   const backup = resolveBackupStatus(status);
+  const backupIssue = resolveBackupIssue(backup);
   const nextSteps = new Set<string>();
   if (!status.verified) {
     nextSteps.add("Run 'openclaw matrix-js verify device <key>' to verify this device.");
   }
-  if (!backup.serverVersion) {
+  if (backupIssue.code === "missing-server-backup") {
     nextSteps.add("Run 'openclaw matrix-js verify bootstrap' to create a room key backup.");
-  } else if (backup.trusted === false || backup.matchesDecryptionKey === false) {
-    nextSteps.add(
-      "Backup is present but not trusted for this device. Re-run 'openclaw matrix-js verify device <key>'.",
-    );
-  } else if (!backup.activeVersion) {
+  } else if (
+    backupIssue.code === "key-load-failed" ||
+    backupIssue.code === "key-not-loaded" ||
+    backupIssue.code === "inactive"
+  ) {
     if (status.recoveryKeyStored) {
       nextSteps.add(
-        "Run 'openclaw matrix-js verify backup restore' to load the backup key and restore old room keys.",
+        "Backup key is not loaded on this device. Run 'openclaw matrix-js verify backup restore' to load it and restore old room keys.",
       );
     } else {
       nextSteps.add(
         "Store a recovery key with 'openclaw matrix-js verify device <key>', then run 'openclaw matrix-js verify backup restore'.",
       );
     }
+  } else if (backupIssue.code === "key-mismatch") {
+    nextSteps.add(
+      "Backup key mismatch on this device. Re-run 'openclaw matrix-js verify device <key>' with the matching recovery key.",
+    );
+  } else if (backupIssue.code === "untrusted-signature") {
+    nextSteps.add(
+      "Backup trust chain is not verified on this device. Re-run 'openclaw matrix-js verify device <key>'.",
+    );
+  } else if (backupIssue.code === "indeterminate") {
+    nextSteps.add(
+      "Run 'openclaw matrix-js verify status --verbose' to inspect backup trust diagnostics.",
+    );
   }
   if (status.pendingVerifications > 0) {
     nextSteps.add(`Complete ${status.pendingVerifications} pending verification request(s).`);
@@ -186,11 +254,11 @@ function printGuidance(lines: string[]): void {
 
 function printVerificationStatus(status: MatrixCliVerificationStatus, verbose = false): void {
   const backup = resolveBackupStatus(status);
+  const backupIssue = resolveBackupIssue(backup);
   console.log(`Verified: ${status.verified ? "yes" : "no"}`);
   printBackupSummary(backup);
-  const backupIssue = describeBackupIssue(backup);
-  if (backupIssue) {
-    console.log(`Backup issue: ${backupIssue}`);
+  if (backupIssue.message) {
+    console.log(`Backup issue: ${backupIssue.message}`);
   }
   if (verbose) {
     console.log("Diagnostics:");

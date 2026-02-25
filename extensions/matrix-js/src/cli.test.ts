@@ -267,6 +267,8 @@ describe("matrix-js CLI verification commands", () => {
         trusted: true,
         matchesDecryptionKey: false,
         decryptionKeyCached: false,
+        keyLoadAttempted: true,
+        keyLoadError: null,
       },
       recoveryKeyStored: true,
       recoveryKeyCreatedAt: "2026-02-25T20:10:11.000Z",
@@ -277,7 +279,42 @@ describe("matrix-js CLI verification commands", () => {
     await program.parseAsync(["matrix-js", "verify", "status"], { from: "user" });
 
     expect(console.log).toHaveBeenCalledWith(
-      "Backup issue: backup decryption key is not loaded on this device",
+      "Backup issue: backup decryption key is not loaded on this device (secret storage did not return a key)",
+    );
+    expect(console.log).toHaveBeenCalledWith(
+      "- Backup key is not loaded on this device. Run 'openclaw matrix-js verify backup restore' to load it and restore old room keys.",
+    );
+    expect(console.log).not.toHaveBeenCalledWith(
+      "- Backup is present but not trusted for this device. Re-run 'openclaw matrix-js verify device <key>'.",
+    );
+  });
+
+  it("includes key load failure details in status output", async () => {
+    getMatrixVerificationStatusMock.mockResolvedValue({
+      encryptionEnabled: true,
+      verified: true,
+      userId: "@bot:example.org",
+      deviceId: "DEVICE123",
+      backupVersion: "5256",
+      backup: {
+        serverVersion: "5256",
+        activeVersion: null,
+        trusted: true,
+        matchesDecryptionKey: false,
+        decryptionKeyCached: false,
+        keyLoadAttempted: true,
+        keyLoadError: "secret storage key is not available",
+      },
+      recoveryKeyStored: true,
+      recoveryKeyCreatedAt: "2026-02-25T20:10:11.000Z",
+      pendingVerifications: 0,
+    });
+    const program = buildProgram();
+
+    await program.parseAsync(["matrix-js", "verify", "status"], { from: "user" });
+
+    expect(console.log).toHaveBeenCalledWith(
+      "Backup issue: backup decryption key could not be loaded from secret storage (secret storage key is not available)",
     );
   });
 
@@ -288,6 +325,8 @@ describe("matrix-js CLI verification commands", () => {
       trusted: true,
       matchesDecryptionKey: false,
       decryptionKeyCached: false,
+      keyLoadAttempted: true,
+      keyLoadError: null,
     });
     const program = buildProgram();
 

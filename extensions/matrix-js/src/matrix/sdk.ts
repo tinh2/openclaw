@@ -63,6 +63,8 @@ export type MatrixRoomKeyBackupStatus = {
   trusted: boolean | null;
   matchesDecryptionKey: boolean | null;
   decryptionKeyCached: boolean | null;
+  keyLoadAttempted: boolean;
+  keyLoadError: string | null;
 };
 
 export type MatrixRoomKeyBackupRestoreResult = {
@@ -562,6 +564,8 @@ export class MatrixClient {
         trusted: null,
         matchesDecryptionKey: null,
         decryptionKeyCached: null,
+        keyLoadAttempted: false,
+        keyLoadError: null,
       };
     }
 
@@ -574,35 +578,42 @@ export class MatrixClient {
         trusted: null,
         matchesDecryptionKey: null,
         decryptionKeyCached: null,
+        keyLoadAttempted: false,
+        keyLoadError: null,
       };
     }
 
-    const [activeVersionRaw, cachedBackupKey] = await Promise.all([
-      this.resolveActiveRoomKeyBackupVersion(crypto),
-      this.resolveCachedRoomKeyBackupDecryptionKey(crypto),
-    ]);
-    let serverVersion = serverVersionFallback;
-    let trusted: boolean | null = null;
-    let matchesDecryptionKey: boolean | null = null;
-    if (typeof crypto.getKeyBackupInfo === "function") {
-      const info = await crypto.getKeyBackupInfo().catch(() => null);
-      serverVersion = normalizeOptionalString(info?.version) ?? serverVersion;
-      if (info && typeof crypto.isKeyBackupTrusted === "function") {
-        const trustInfo = await crypto.isKeyBackupTrusted(info).catch(() => null);
-        trusted = typeof trustInfo?.trusted === "boolean" ? trustInfo.trusted : null;
-        matchesDecryptionKey =
-          typeof trustInfo?.matchesDecryptionKey === "boolean"
-            ? trustInfo.matchesDecryptionKey
-            : null;
+    let { activeVersion, decryptionKeyCached } = await this.resolveRoomKeyBackupLocalState(crypto);
+    let { serverVersion, trusted, matchesDecryptionKey } =
+      await this.resolveRoomKeyBackupTrustState(crypto, serverVersionFallback);
+    let keyLoadAttempted = false;
+    let keyLoadError: string | null = null;
+    if (serverVersion && decryptionKeyCached === false) {
+      if (typeof crypto.loadSessionBackupPrivateKeyFromSecretStorage === "function") {
+        keyLoadAttempted = true;
+        try {
+          await crypto.loadSessionBackupPrivateKeyFromSecretStorage();
+        } catch (err) {
+          keyLoadError = err instanceof Error ? err.message : String(err);
+        }
+        ({ activeVersion, decryptionKeyCached } =
+          await this.resolveRoomKeyBackupLocalState(crypto));
+        ({ serverVersion, trusted, matchesDecryptionKey } =
+          await this.resolveRoomKeyBackupTrustState(crypto, serverVersion));
+      } else {
+        keyLoadError =
+          "Matrix crypto backend does not support loading backup keys from secret storage";
       }
     }
 
     return {
       serverVersion,
-      activeVersion: activeVersionRaw,
+      activeVersion,
       trusted,
       matchesDecryptionKey,
-      decryptionKeyCached: cachedBackupKey,
+      decryptionKeyCached,
+      keyLoadAttempted,
+      keyLoadError,
     };
   }
 
@@ -910,6 +921,42 @@ export class MatrixClient {
     }
     const key = await crypto.getSessionBackupPrivateKey().catch(() => null);
     return key ? key.length > 0 : false;
+  }
+
+  private async resolveRoomKeyBackupLocalState(
+    crypto: MatrixCryptoBootstrapApi,
+  ): Promise<{ activeVersion: string | null; decryptionKeyCached: boolean | null }> {
+    const [activeVersion, decryptionKeyCached] = await Promise.all([
+      this.resolveActiveRoomKeyBackupVersion(crypto),
+      this.resolveCachedRoomKeyBackupDecryptionKey(crypto),
+    ]);
+    return { activeVersion, decryptionKeyCached };
+  }
+
+  private async resolveRoomKeyBackupTrustState(
+    crypto: MatrixCryptoBootstrapApi,
+    fallbackVersion: string | null,
+  ): Promise<{
+    serverVersion: string | null;
+    trusted: boolean | null;
+    matchesDecryptionKey: boolean | null;
+  }> {
+    let serverVersion = fallbackVersion;
+    let trusted: boolean | null = null;
+    let matchesDecryptionKey: boolean | null = null;
+    if (typeof crypto.getKeyBackupInfo === "function") {
+      const info = await crypto.getKeyBackupInfo().catch(() => null);
+      serverVersion = normalizeOptionalString(info?.version) ?? serverVersion;
+      if (info && typeof crypto.isKeyBackupTrusted === "function") {
+        const trustInfo = await crypto.isKeyBackupTrusted(info).catch(() => null);
+        trusted = typeof trustInfo?.trusted === "boolean" ? trustInfo.trusted : null;
+        matchesDecryptionKey =
+          typeof trustInfo?.matchesDecryptionKey === "boolean"
+            ? trustInfo.matchesDecryptionKey
+            : null;
+      }
+    }
+    return { serverVersion, trusted, matchesDecryptionKey };
   }
 
   private async resolveRoomKeyBackupVersion(): Promise<string | null> {

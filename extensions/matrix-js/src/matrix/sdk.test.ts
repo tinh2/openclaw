@@ -924,7 +924,82 @@ describe("MatrixClient crypto bootstrapping", () => {
       trusted: true,
       matchesDecryptionKey: true,
       decryptionKeyCached: true,
+      keyLoadAttempted: false,
+      keyLoadError: null,
     });
+  });
+
+  it("tries loading backup keys from secret storage when key is missing from cache", async () => {
+    const getActiveSessionBackupVersion = vi
+      .fn()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce("9");
+    const getSessionBackupPrivateKey = vi
+      .fn()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(new Uint8Array([1]));
+    const loadSessionBackupPrivateKeyFromSecretStorage = vi.fn(async () => {});
+    matrixJsClient.getCrypto = vi.fn(() => ({
+      on: vi.fn(),
+      getActiveSessionBackupVersion,
+      getSessionBackupPrivateKey,
+      loadSessionBackupPrivateKeyFromSecretStorage,
+      getKeyBackupInfo: vi.fn(async () => ({
+        algorithm: "m.megolm_backup.v1.curve25519-aes-sha2",
+        auth_data: {},
+        version: "9",
+      })),
+      isKeyBackupTrusted: vi.fn(async () => ({
+        trusted: true,
+        matchesDecryptionKey: true,
+      })),
+    }));
+
+    const client = new MatrixClient("https://matrix.example.org", "token", undefined, undefined, {
+      encryption: true,
+    });
+
+    const backup = await client.getRoomKeyBackupStatus();
+    expect(backup).toMatchObject({
+      serverVersion: "9",
+      activeVersion: "9",
+      trusted: true,
+      matchesDecryptionKey: true,
+      decryptionKeyCached: true,
+      keyLoadAttempted: true,
+      keyLoadError: null,
+    });
+    expect(loadSessionBackupPrivateKeyFromSecretStorage).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports why backup key loading failed during status checks", async () => {
+    const loadSessionBackupPrivateKeyFromSecretStorage = vi.fn(async () => {
+      throw new Error("secret storage key is not available");
+    });
+    matrixJsClient.getCrypto = vi.fn(() => ({
+      on: vi.fn(),
+      getActiveSessionBackupVersion: vi.fn(async () => null),
+      getSessionBackupPrivateKey: vi.fn(async () => null),
+      loadSessionBackupPrivateKeyFromSecretStorage,
+      getKeyBackupInfo: vi.fn(async () => ({
+        algorithm: "m.megolm_backup.v1.curve25519-aes-sha2",
+        auth_data: {},
+        version: "9",
+      })),
+      isKeyBackupTrusted: vi.fn(async () => ({
+        trusted: true,
+        matchesDecryptionKey: false,
+      })),
+    }));
+
+    const client = new MatrixClient("https://matrix.example.org", "token", undefined, undefined, {
+      encryption: true,
+    });
+
+    const backup = await client.getRoomKeyBackupStatus();
+    expect(backup.keyLoadAttempted).toBe(true);
+    expect(backup.keyLoadError).toContain("secret storage key is not available");
+    expect(backup.decryptionKeyCached).toBe(false);
   });
 
   it("restores room keys from backup after loading key from secret storage", async () => {
