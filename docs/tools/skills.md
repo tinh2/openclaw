@@ -328,6 +328,58 @@ Fields under `metadata.openclaw`:
 
   No capabilities declared = read-only, model-only skill. Community skills with undeclared capabilities that attempt to use dangerous tools will be blocked at runtime. See [Tool enforcement matrix](#tool-enforcement-matrix) below and [Security](/gateway/security) for full details.
 
+### Capability shape and normalization
+
+OpenClaw accepts both styles under the same `capabilities` key:
+
+Flat list:
+
+```json
+{
+  "openclaw": {
+    "capabilities": ["shell", "network", "sessions"]
+  }
+}
+```
+
+Two-layer object with optional constraints:
+
+```jsonc
+{
+  "openclaw": {
+    "capabilities": {
+      "shell": { "mode": "restricted", "allow": ["git", "gh"] }, // key/value constraints
+      "network": { "web_search": true, "web_fetch": true }, // granular switches
+      "sessions": { "maxDepth": 2 }, // future-safe metadata
+    },
+  },
+}
+```
+
+Array-of-objects also works:
+
+```json
+{
+  "openclaw": {
+    "capabilities": [
+      { "type": "network.search", "constraints": { "provider": "brave" } },
+      { "name": "shell.exec", "constraints": { "mode": "restricted" } }
+    ]
+  }
+}
+```
+
+Normalization behavior:
+
+- OpenClaw normalizes external naming to canonical values (`shell`, `filesystem`, `network`, `browser`, `sessions`, `messaging`, `scheduling`).
+- Examples:
+  - `web_fetch`, `web_search`, `webfetch` -> `network`
+  - `terminal`, `bash`, `exec` -> `shell`
+  - `subagent`, `sessions_spawn` -> `sessions`
+  - `message` -> `messaging`
+  - `cron`, `schedule` -> `scheduling`
+- Constraints are currently advisory metadata (not enforced by the runtime gate yet). Keep them simple key/value pairs for forward compatibility.
+
 - `requires.bins` — list; each must exist on `PATH`.
 - `requires.anyBins` — list; at least one must exist on `PATH`.
 - `requires.env` — list; env var must exist **or** be provided in config.
