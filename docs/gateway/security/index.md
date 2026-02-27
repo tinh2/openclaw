@@ -219,7 +219,7 @@ If a macOS node is paired, the Gateway can invoke `system.run` on that node. Thi
 
 Community skills (installed from ClawHub) are subject to runtime security enforcement:
 
-- **Capabilities**: Skills declare what system access they need (`shell`, `filesystem`, `network`, `browser`, `sessions`) in `metadata.openclaw.capabilities`. No capabilities = read-only. Community skills that use tools without declaring the matching capability are blocked at runtime.
+- **Capabilities**: Skills declare what system access they need (`shell`, `filesystem`, `network`, `browser`, `sessions`, `messaging`, `scheduling`) in `metadata.openclaw.capabilities`. No capabilities = read-only. Community skills that use tools without declaring the matching capability are blocked at runtime.
 - **SKILL.md scanning**: Content is scanned for prompt injection patterns, capability inflation, and boundary spoofing before entering the system prompt. Skills with critical findings are blocked from loading.
 - **Trust tiers**: Skills are classified as `builtin`, `community`, or `local`. Only `community` skills (installed from ClawHub) are subject to enforcement — builtin and local skills are exempt. Author verification may be introduced in a future release to provide an additional trust signal.
 - **Command dispatch gating**: Community skills using `command-dispatch: tool` can't dispatch to dangerous tools without declaring the matching capability.
