@@ -117,7 +117,7 @@ OpenClaw enforces them at runtime — community skills that attempt to use tools
 without the matching declared capability are blocked. Skills with no capabilities
 are treated as read-only (model-only instructions, no tool access).
 
-Available capabilities: `shell`, `filesystem`, `network`, `browser`, `sessions`.
+Available capabilities: `shell`, `filesystem`, `network`, `browser`, `sessions`, `messaging`, `scheduling`.
 
 ### Reporting and moderation
 
