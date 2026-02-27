@@ -1,9 +1,6 @@
 import type { Command } from "commander";
 import { resolveAgentWorkspaceDir, resolveDefaultAgentId } from "../agents/agent-scope.js";
-import type { SkillStatusReport } from "../agents/skills-status.js";
 import { loadConfig } from "../config/config.js";
-import { loggingState } from "../logging/state.js";
-import { createSubsystemLogger } from "../logging/subsystem.js";
 import { defaultRuntime } from "../runtime.js";
 import { formatDocsLink } from "../terminal/links.js";
 import { theme } from "../terminal/theme.js";
@@ -16,28 +13,9 @@ export type {
 } from "./skills-cli.format.js";
 export { formatSkillInfo, formatSkillsCheck, formatSkillsList } from "./skills-cli.format.js";
 
-const log = createSubsystemLogger("skills/cli");
-
-/** Build a structured summary of the skills report for JSON file logging. */
-function buildStructuredReport(report: SkillStatusReport) {
-  const eligible = report.skills.filter((s) => s.eligible);
-  const blocked = report.skills.filter((s) => s.scanResult?.severity === "critical");
-  const disabled = report.skills.filter((s) => s.disabled);
-  return {
-    total: report.skills.length,
-    eligible: eligible.length,
-    blocked: blocked.length,
-    disabled: disabled.length,
-    missing: report.skills.length - eligible.length - blocked.length - disabled.length,
-    skills: report.skills.map((s) => ({
-      name: s.name,
-      source: s.source,
-      eligible: s.eligible,
-      scanSeverity: s.scanResult?.severity ?? "clean",
-      capabilities: s.capabilities,
-    })),
-  };
-}
+type SkillStatusReport = Awaited<
+  ReturnType<(typeof import("../agents/skills-status.js"))["buildWorkspaceSkillStatus"]>
+>;
 
 async function loadSkillsStatusReport(): Promise<SkillStatusReport> {
   const config = loadConfig();
@@ -46,19 +24,10 @@ async function loadSkillsStatusReport(): Promise<SkillStatusReport> {
   return buildWorkspaceSkillStatus(workspaceDir, { config });
 }
 
-async function runSkillsAction(
-  render: (report: SkillStatusReport) => string,
-  command: string,
-): Promise<void> {
+async function runSkillsAction(render: (report: SkillStatusReport) => string): Promise<void> {
   try {
     const report = await loadSkillsStatusReport();
-    const formatted = render(report);
-    const rawLog = loggingState.rawConsole?.log ?? defaultRuntime.log;
-    rawLog(formatted);
-    log.info(`${command} completed`, {
-      command,
-      ...buildStructuredReport(report),
-    });
+    defaultRuntime.log(render(report));
   } catch (err) {
     defaultRuntime.error(String(err));
     defaultRuntime.exit(1);
@@ -85,7 +54,7 @@ export function registerSkillsCli(program: Command) {
     .option("--eligible", "Show only eligible (ready to use) skills", false)
     .option("-v, --verbose", "Show more details including missing requirements", false)
     .action(async (opts) => {
-      await runSkillsAction((report) => formatSkillsList(report, opts), "skills list");
+      await runSkillsAction((report) => formatSkillsList(report, opts));
     });
 
   skills
@@ -94,7 +63,7 @@ export function registerSkillsCli(program: Command) {
     .argument("<name>", "Skill name")
     .option("--json", "Output as JSON", false)
     .action(async (name, opts) => {
-      await runSkillsAction((report) => formatSkillInfo(report, name, opts), `skills info ${name}`);
+      await runSkillsAction((report) => formatSkillInfo(report, name, opts));
     });
 
   skills
@@ -102,11 +71,11 @@ export function registerSkillsCli(program: Command) {
     .description("Check which skills are ready vs missing requirements")
     .option("--json", "Output as JSON", false)
     .action(async (opts) => {
-      await runSkillsAction((report) => formatSkillsCheck(report, opts), "skills check");
+      await runSkillsAction((report) => formatSkillsCheck(report, opts));
     });
 
   // Default action (no subcommand) - show list
   skills.action(async () => {
-    await runSkillsAction((report) => formatSkillsList(report, {}), "skills list");
+    await runSkillsAction((report) => formatSkillsList(report, {}));
   });
 }
