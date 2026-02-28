@@ -121,6 +121,9 @@ dist/protocol.schema.json
 # Synthing
 **/.stfolder/
 
+# Device pairing state (runtime, may contain tokens)
+devices/
+
 # Agent pool manager runtime artifacts
 pool/state.json
 pool/roster.json
