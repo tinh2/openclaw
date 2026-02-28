@@ -1,46 +1,472 @@
+# OpenClaw SaaS Org Chart AI Framework
+#
+# Launch by company stage:
+#   docker compose --profile seed up -d          # ~8 agents
+#   docker compose --profile series-a up -d      # ~20 agents
+#   docker compose --profile series-b up -d      # ~30 agents
+#   docker compose --profile late-stage up -d    # ~47 agents (full org)
+#
+# Or use: ./scripts/activate-stage.sh <stage>
+
+x-agent-base: &agent-base
+  image: ${OPENCLAW_IMAGE:-openclaw:custom}
+  user: "1001:1001"
+  environment: &agent-env
+    HOME: /home/node
+    TERM: xterm-256color
+    OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN}
+    ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+    OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
+    CLAUDE_AI_SESSION_KEY: ${CLAUDE_AI_SESSION_KEY}
+    CLAUDE_WEB_SESSION_KEY: ${CLAUDE_WEB_SESSION_KEY}
+    CLAUDE_WEB_COOKIE: ${CLAUDE_WEB_COOKIE}
+    POOL_HOST: pool-manager
+    POOL_PORT: "19000"
+  init: true
+  extra_hosts:
+    - "pool-manager:host-gateway"
+  restart: unless-stopped
+
 services:
+  # ═══════════════════════════════════════════════════════════
+  # INFRASTRUCTURE (always running)
+  # ═══════════════════════════════════════════════════════════
+
   openclaw-gateway:
-    image: ${OPENCLAW_IMAGE:-openclaw:local}
-    environment:
-      HOME: /home/node
-      TERM: xterm-256color
-      OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN}
-      CLAUDE_AI_SESSION_KEY: ${CLAUDE_AI_SESSION_KEY}
-      CLAUDE_WEB_SESSION_KEY: ${CLAUDE_WEB_SESSION_KEY}
-      CLAUDE_WEB_COOKIE: ${CLAUDE_WEB_COOKIE}
+    <<: *agent-base
     volumes:
       - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
       - ${OPENCLAW_WORKSPACE_DIR}:/home/node/.openclaw/workspace
     ports:
       - "${OPENCLAW_GATEWAY_PORT:-18789}:18789"
       - "${OPENCLAW_BRIDGE_PORT:-18790}:18790"
-    init: true
-    restart: unless-stopped
     command:
       [
-        "node",
-        "dist/index.js",
-        "gateway",
-        "--bind",
-        "${OPENCLAW_GATEWAY_BIND:-lan}",
-        "--port",
-        "18789",
+        "node", "dist/index.js", "gateway",
+        "--bind", "0.0.0.0",
+        "--port", "18789",
       ]
 
   openclaw-cli:
-    image: ${OPENCLAW_IMAGE:-openclaw:local}
+    <<: *agent-base
     environment:
-      HOME: /home/node
-      TERM: xterm-256color
-      OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN}
+      <<: *agent-env
       BROWSER: echo
-      CLAUDE_AI_SESSION_KEY: ${CLAUDE_AI_SESSION_KEY}
-      CLAUDE_WEB_SESSION_KEY: ${CLAUDE_WEB_SESSION_KEY}
-      CLAUDE_WEB_COOKIE: ${CLAUDE_WEB_COOKIE}
     volumes:
       - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
       - ${OPENCLAW_WORKSPACE_DIR}:/home/node/.openclaw/workspace
     stdin_open: true
     tty: true
-    init: true
     entrypoint: ["node", "dist/index.js"]
+
+  # ═══════════════════════════════════════════════════════════
+  # LAYER 1: STRATEGIC (C-Suite)
+  # ═══════════════════════════════════════════════════════════
+
+  # CEO — always active (all stages)
+  ceo:
+    <<: *agent-base
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
+      - ./workspace-ceo:/home/node/.openclaw/workspace
+      - ./configs/ceo.yaml:/home/node/.openclaw/agent-config.yaml:ro
+
+  # CFO — always active (CFO Lite at seed)
+  cfo:
+    <<: *agent-base
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
+      - ./workspace-cfo:/home/node/.openclaw/workspace
+      - ./configs/cfo.yaml:/home/node/.openclaw/agent-config.yaml:ro
+
+  # CTO — always active
+  cto:
+    <<: *agent-base
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
+      - ./workspace-cto:/home/node/.openclaw/workspace
+      - ./configs/cto.yaml:/home/node/.openclaw/agent-config.yaml:ro
+
+  # COO — series-a+
+  coo:
+    <<: *agent-base
+    profiles: [series-a, series-b, late-stage]
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
+      - ./workspace-coo:/home/node/.openclaw/workspace
+      - ./configs/coo.yaml:/home/node/.openclaw/agent-config.yaml:ro
+
+  # CPO — series-a+
+  cpo:
+    <<: *agent-base
+    profiles: [series-a, series-b, late-stage]
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
+      - ./workspace-cpo:/home/node/.openclaw/workspace
+      - ./configs/cpo.yaml:/home/node/.openclaw/agent-config.yaml:ro
+
+  # CRO — series-a+
+  cro:
+    <<: *agent-base
+    profiles: [series-a, series-b, late-stage]
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
+      - ./workspace-cro:/home/node/.openclaw/workspace
+      - ./configs/cro.yaml:/home/node/.openclaw/agent-config.yaml:ro
+
+  # ═══════════════════════════════════════════════════════════
+  # LAYER 2: EXECUTION — Product & Engineering Squad
+  # ═══════════════════════════════════════════════════════════
+
+  software-engineer:
+    <<: *agent-base
+    profiles: [seed, series-a, series-b, late-stage, marketing]
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
+      - ./workspace-software-engineer:/home/node/.openclaw/workspace
+      - ./configs/software-engineer.yaml:/home/node/.openclaw/agent-config.yaml:ro
+
+  staff-engineer:
+    <<: *agent-base
+    profiles: [series-a, series-b, late-stage]
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
+      - ./workspace-staff-engineer:/home/node/.openclaw/workspace
+      - ./configs/staff-engineer.yaml:/home/node/.openclaw/agent-config.yaml:ro
+
+  devops:
+    <<: *agent-base
+    profiles: [series-a, series-b, late-stage]
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
+      - ./workspace-devops:/home/node/.openclaw/workspace
+      - ./configs/devops.yaml:/home/node/.openclaw/agent-config.yaml:ro
+
+  security-engineer:
+    <<: *agent-base
+    profiles: [series-b, late-stage]
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
+      - ./workspace-security-engineer:/home/node/.openclaw/workspace
+      - ./configs/security-engineer.yaml:/home/node/.openclaw/agent-config.yaml:ro
+
+  qa-engineer:
+    <<: *agent-base
+    profiles: [seed, series-a, series-b, late-stage]
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
+      - ./workspace-qa-engineer:/home/node/.openclaw/workspace
+      - ./configs/qa-engineer.yaml:/home/node/.openclaw/agent-config.yaml:ro
+
+  product-manager:
+    <<: *agent-base
+    profiles: [seed, series-a, series-b, late-stage]
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
+      - ./workspace-product-manager:/home/node/.openclaw/workspace
+      - ./configs/product-manager.yaml:/home/node/.openclaw/agent-config.yaml:ro
+
+  ux-designer:
+    <<: *agent-base
+    profiles: [series-a, series-b, late-stage]
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
+      - ./workspace-ux-designer:/home/node/.openclaw/workspace
+      - ./configs/ux-designer.yaml:/home/node/.openclaw/agent-config.yaml:ro
+
+  data-engineer:
+    <<: *agent-base
+    profiles: [series-b, late-stage]
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
+      - ./workspace-data-engineer:/home/node/.openclaw/workspace
+      - ./configs/data-engineer.yaml:/home/node/.openclaw/agent-config.yaml:ro
+
+  data-scientist:
+    <<: *agent-base
+    profiles: [series-b, late-stage]
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
+      - ./workspace-data-scientist:/home/node/.openclaw/workspace
+      - ./configs/data-scientist.yaml:/home/node/.openclaw/agent-config.yaml:ro
+
+  # ═══════════════════════════════════════════════════════════
+  # LAYER 2: EXECUTION — Marketing Squad
+  # ═══════════════════════════════════════════════════════════
+
+  growth-marketer:
+    <<: *agent-base
+    profiles: [seed, series-a, series-b, late-stage, marketing]
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
+      - ./workspace-growth-marketer:/home/node/.openclaw/workspace
+      - ./configs/growth-marketer.yaml:/home/node/.openclaw/agent-config.yaml:ro
+
+  content-marketer:
+    <<: *agent-base
+    profiles: [series-a, series-b, late-stage, marketing]
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
+      - ./workspace-content-marketer:/home/node/.openclaw/workspace
+      - ./configs/content-marketer.yaml:/home/node/.openclaw/agent-config.yaml:ro
+
+  pmm:
+    <<: *agent-base
+    profiles: [series-a, series-b, late-stage, marketing]
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
+      - ./workspace-pmm:/home/node/.openclaw/workspace
+      - ./configs/pmm.yaml:/home/node/.openclaw/agent-config.yaml:ro
+
+  brand-strategist:
+    <<: *agent-base
+    profiles: [series-b, late-stage, marketing]
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
+      - ./workspace-brand-strategist:/home/node/.openclaw/workspace
+      - ./configs/brand-strategist.yaml:/home/node/.openclaw/agent-config.yaml:ro
+
+  perf-marketer:
+    <<: *agent-base
+    profiles: [series-a, series-b, late-stage, marketing]
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
+      - ./workspace-perf-marketer:/home/node/.openclaw/workspace
+      - ./configs/perf-marketer.yaml:/home/node/.openclaw/agent-config.yaml:ro
+
+  marketing-ops:
+    <<: *agent-base
+    profiles: [series-b, late-stage, marketing]
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
+      - ./workspace-marketing-ops:/home/node/.openclaw/workspace
+      - ./configs/marketing-ops.yaml:/home/node/.openclaw/agent-config.yaml:ro
+
+  # ═══════════════════════════════════════════════════════════
+  # LAYER 2: EXECUTION — Sales Squad
+  # ═══════════════════════════════════════════════════════════
+
+  sdr:
+    <<: *agent-base
+    profiles: [series-a, series-b, late-stage]
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
+      - ./workspace-sdr:/home/node/.openclaw/workspace
+      - ./configs/sdr.yaml:/home/node/.openclaw/agent-config.yaml:ro
+
+  account-exec:
+    <<: *agent-base
+    profiles: [series-a, series-b, late-stage]
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
+      - ./workspace-account-exec:/home/node/.openclaw/workspace
+      - ./configs/account-exec.yaml:/home/node/.openclaw/agent-config.yaml:ro
+
+  enterprise-sales:
+    <<: *agent-base
+    profiles: [series-b, late-stage]
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
+      - ./workspace-enterprise-sales:/home/node/.openclaw/workspace
+      - ./configs/enterprise-sales.yaml:/home/node/.openclaw/agent-config.yaml:ro
+
+  sales-engineer:
+    <<: *agent-base
+    profiles: [series-b, late-stage]
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
+      - ./workspace-sales-engineer:/home/node/.openclaw/workspace
+      - ./configs/sales-engineer.yaml:/home/node/.openclaw/agent-config.yaml:ro
+
+  sales-ops:
+    <<: *agent-base
+    profiles: [series-a, series-b, late-stage]
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
+      - ./workspace-sales-ops:/home/node/.openclaw/workspace
+      - ./configs/sales-ops.yaml:/home/node/.openclaw/agent-config.yaml:ro
+
+  # ═══════════════════════════════════════════════════════════
+  # LAYER 2: EXECUTION — Customer Squad
+  # ═══════════════════════════════════════════════════════════
+
+  csm:
+    <<: *agent-base
+    profiles: [seed, series-a, series-b, late-stage]
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
+      - ./workspace-csm:/home/node/.openclaw/workspace
+      - ./configs/csm.yaml:/home/node/.openclaw/agent-config.yaml:ro
+
+  support-lead:
+    <<: *agent-base
+    profiles: [series-a, series-b, late-stage]
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
+      - ./workspace-support-lead:/home/node/.openclaw/workspace
+      - ./configs/support-lead.yaml:/home/node/.openclaw/agent-config.yaml:ro
+
+  implementation:
+    <<: *agent-base
+    profiles: [series-b, late-stage]
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
+      - ./workspace-implementation:/home/node/.openclaw/workspace
+      - ./configs/implementation.yaml:/home/node/.openclaw/agent-config.yaml:ro
+
+  community-manager:
+    <<: *agent-base
+    profiles: [series-b, late-stage]
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
+      - ./workspace-community-manager:/home/node/.openclaw/workspace
+      - ./configs/community-manager.yaml:/home/node/.openclaw/agent-config.yaml:ro
+
+  # ═══════════════════════════════════════════════════════════
+  # LAYER 3: INTELLIGENCE
+  # ═══════════════════════════════════════════════════════════
+
+  fpa-analyst:
+    <<: *agent-base
+    profiles: [series-b, late-stage]
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
+      - ./workspace-fpa-analyst:/home/node/.openclaw/workspace
+      - ./configs/fpa-analyst.yaml:/home/node/.openclaw/agent-config.yaml:ro
+
+  controller:
+    <<: *agent-base
+    profiles: [series-b, late-stage]
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
+      - ./workspace-controller:/home/node/.openclaw/workspace
+      - ./configs/controller.yaml:/home/node/.openclaw/agent-config.yaml:ro
+
+  legal-counsel:
+    <<: *agent-base
+    profiles: [series-b, late-stage]
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
+      - ./workspace-legal-counsel:/home/node/.openclaw/workspace
+      - ./configs/legal-counsel.yaml:/home/node/.openclaw/agent-config.yaml:ro
+
+  revops:
+    <<: *agent-base
+    profiles: [series-a, series-b, late-stage]
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
+      - ./workspace-revops:/home/node/.openclaw/workspace
+      - ./configs/revops.yaml:/home/node/.openclaw/agent-config.yaml:ro
+
+  bizops:
+    <<: *agent-base
+    profiles: [series-a, series-b, late-stage]
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
+      - ./workspace-bizops:/home/node/.openclaw/workspace
+      - ./configs/bizops.yaml:/home/node/.openclaw/agent-config.yaml:ro
+
+  # ═══════════════════════════════════════════════════════════
+  # PEOPLE & ADVANCED
+  # ═══════════════════════════════════════════════════════════
+
+  head-of-people:
+    <<: *agent-base
+    profiles: [series-a, series-b, late-stage]
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
+      - ./workspace-head-of-people:/home/node/.openclaw/workspace
+      - ./configs/head-of-people.yaml:/home/node/.openclaw/agent-config.yaml:ro
+
+  recruiter:
+    <<: *agent-base
+    profiles: [series-b, late-stage]
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
+      - ./workspace-recruiter:/home/node/.openclaw/workspace
+      - ./configs/recruiter.yaml:/home/node/.openclaw/agent-config.yaml:ro
+
+  talent-ops:
+    <<: *agent-base
+    profiles: [late-stage]
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
+      - ./workspace-talent-ops:/home/node/.openclaw/workspace
+      - ./configs/talent-ops.yaml:/home/node/.openclaw/agent-config.yaml:ro
+
+  partnerships:
+    <<: *agent-base
+    profiles: [late-stage]
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
+      - ./workspace-partnerships:/home/node/.openclaw/workspace
+      - ./configs/partnerships.yaml:/home/node/.openclaw/agent-config.yaml:ro
+
+  corp-dev:
+    <<: *agent-base
+    profiles: [late-stage]
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
+      - ./workspace-corp-dev:/home/node/.openclaw/workspace
+      - ./configs/corp-dev.yaml:/home/node/.openclaw/agent-config.yaml:ro
+
+  chief-of-staff:
+    <<: *agent-base
+    profiles: [series-b, late-stage]
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
+      - ./workspace-chief-of-staff:/home/node/.openclaw/workspace
+      - ./configs/chief-of-staff.yaml:/home/node/.openclaw/agent-config.yaml:ro
+
+  # ═══════════════════════════════════════════════════════════
+  # LAYER 4: STRESS TEST (Adversarial Agents)
+  # ═══════════════════════════════════════════════════════════
+
+  board-skeptic:
+    <<: *agent-base
+    profiles: [seed, series-a, series-b, late-stage]
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
+      - ./workspace-board-skeptic:/home/node/.openclaw/workspace
+      - ./configs/board-skeptic.yaml:/home/node/.openclaw/agent-config.yaml:ro
+
+  activist-investor:
+    <<: *agent-base
+    profiles: [series-a, series-b, late-stage]
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
+      - ./workspace-activist-investor:/home/node/.openclaw/workspace
+      - ./configs/activist-investor.yaml:/home/node/.openclaw/agent-config.yaml:ro
+
+  power-user:
+    <<: *agent-base
+    profiles: [seed, series-a, series-b, late-stage]
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
+      - ./workspace-power-user:/home/node/.openclaw/workspace
+      - ./configs/power-user.yaml:/home/node/.openclaw/agent-config.yaml:ro
+
+  churned-customer:
+    <<: *agent-base
+    profiles: [series-a, series-b, late-stage]
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
+      - ./workspace-churned-customer:/home/node/.openclaw/workspace
+      - ./configs/churned-customer.yaml:/home/node/.openclaw/agent-config.yaml:ro
+
+  competitor-ceo:
+    <<: *agent-base
+    profiles: [seed, series-a, series-b, late-stage]
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
+      - ./workspace-competitor-ceo:/home/node/.openclaw/workspace
+      - ./configs/competitor-ceo.yaml:/home/node/.openclaw/agent-config.yaml:ro
+
+  procurement-officer:
+    <<: *agent-base
+    profiles: [series-b, late-stage]
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
+      - ./workspace-procurement-officer:/home/node/.openclaw/workspace
+      - ./configs/procurement-officer.yaml:/home/node/.openclaw/agent-config.yaml:ro

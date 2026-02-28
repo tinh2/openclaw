@@ -1,0 +1,51 @@
+#!/bin/bash
+# CLI for OpenClaw Agent Pool Manager
+# Usage: poolctl <command> [agent-id]
+set -euo pipefail
+
+POOL_HOST="${POOL_HOST:-localhost}"
+POOL_PORT="${POOL_PORT:-19000}"
+BASE="http://$POOL_HOST:$POOL_PORT"
+
+do_curl() {
+  local result
+  result=$(curl -sf --max-time 60 "$@") || {
+    echo "Error: could not reach pool manager at $BASE" >&2
+    exit 1
+  }
+  echo "$result" | jq .
+}
+
+case "${1:-help}" in
+  start|request)
+    [ -z "${2:-}" ] && { echo "Usage: poolctl start <agent-id>"; exit 1; }
+    payload=$(jq -n --arg a "$2" --arg by "cli" '{agent: $a, requested_by: $by}')
+    do_curl -X POST "$BASE/request" -H "Content-Type: application/json" -d "$payload"
+    ;;
+  stop|release)
+    [ -z "${2:-}" ] && { echo "Usage: poolctl stop <agent-id>"; exit 1; }
+    payload=$(jq -n --arg a "$2" '{agent: $a}')
+    do_curl -X POST "$BASE/release" -H "Content-Type: application/json" -d "$payload"
+    ;;
+  status|ps)
+    do_curl "$BASE/status"
+    ;;
+  who|available)
+    do_curl "$BASE/available"
+    ;;
+  health)
+    do_curl "$BASE/health"
+    ;;
+  *)
+    echo "OpenClaw Pool Manager CLI"
+    echo ""
+    echo "Usage: poolctl <command> [agent-id]"
+    echo ""
+    echo "Commands:"
+    echo "  start <agent>   Start an agent (evicts LRU if pool full)"
+    echo "  stop <agent>    Stop an agent, free a slot"
+    echo "  status          Show pool status with details"
+    echo "  who             List running agent IDs"
+    echo "  health          Check pool manager health"
+    ;;
+esac
