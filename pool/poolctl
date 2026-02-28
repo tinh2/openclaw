@@ -19,12 +19,12 @@ do_curl() {
 case "${1:-help}" in
   start|request)
     [ -z "${2:-}" ] && { echo "Usage: poolctl start <agent-id>"; exit 1; }
-    payload=$(jq -n --arg a "$2" --arg by "cli" '{agent: $a, requested_by: $by}')
+    payload=$(jq -cn --arg a "$2" --arg by "cli" '{agent: $a, requested_by: $by}')
     do_curl -X POST "$BASE/request" -H "Content-Type: application/json" -d "$payload"
     ;;
   stop|release)
     [ -z "${2:-}" ] && { echo "Usage: poolctl stop <agent-id>"; exit 1; }
-    payload=$(jq -n --arg a "$2" '{agent: $a}')
+    payload=$(jq -cn --arg a "$2" '{agent: $a}')
     do_curl -X POST "$BASE/release" -H "Content-Type: application/json" -d "$payload"
     ;;
   status|ps)
