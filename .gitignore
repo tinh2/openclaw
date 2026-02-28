@@ -120,3 +120,29 @@ dist/protocol.schema.json
 
 # Synthing
 **/.stfolder/
+
+# Agent pool manager runtime artifacts
+pool/state.json
+pool/roster.json
+pool/activity/
+pool/pool-manager.log
+pool/.lock
+pool/net-patch.js
+
+# Agent workspace runtime data (created by running agents)
+workspace-*/
+!workspace-*/SOUL.md
+agents/
+canvas/
+configs/
+cron/
+identity/
+
+# Local agent config/entrypoint files
+agent-config.yaml
+agent-entrypoint.sh
+agent-openclaw.json
+gateway-openclaw.json
+openclaw.json
+net-patch.js
+docker-compose.yml.bak
