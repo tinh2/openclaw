@@ -124,9 +124,29 @@ else
     API_KEY="YOUR_KEY_HERE"
   fi
 
+  # Fetch GIT_PERSONAL_PROJECTS_TOKEN from AWS Secrets Manager if not set
+  GIT_TOKEN="${GIT_PERSONAL_PROJECTS_TOKEN:-}"
+  if [ -z "$GIT_TOKEN" ] && command -v aws >/dev/null 2>&1; then
+    GIT_TOKEN="$(
+      aws secretsmanager get-secret-value \
+        --secret-id teambearie/Secrets \
+        --profile recipeai \
+        --query 'SecretString' --output text 2>/dev/null \
+      | python3 -c "import sys,json; print(json.load(sys.stdin).get('GIT_PERSONAL_PROJECTS_TOKEN',''))" 2>/dev/null \
+      || true
+    )"
+    if [ -n "$GIT_TOKEN" ]; then
+      info "Fetched GIT_PERSONAL_PROJECTS_TOKEN from AWS Secrets Manager"
+    fi
+  fi
+  if [ -z "$GIT_TOKEN" ]; then
+    warn "GIT_PERSONAL_PROJECTS_TOKEN not available. Git operations in containers will be unauthenticated."
+  fi
+
   ssh "$VPS" "cat > $REMOTE_DIR/.env << 'ENVEOF'
 ANTHROPIC_API_KEY=$API_KEY
 OPENCLAW_GATEWAY_TOKEN=$GW_TOKEN
+GIT_PERSONAL_PROJECTS_TOKEN=$GIT_TOKEN
 OPENCLAW_CONFIG_DIR=$REMOTE_DIR
 OPENCLAW_WORKSPACE_DIR=$REMOTE_DIR/workspace-main
 OPENCLAW_IMAGE=openclaw:custom

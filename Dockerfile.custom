@@ -2,10 +2,15 @@ FROM openclaw:local
 
 USER root
 
-# Install system tools
+# Install system tools + AWS CLI (for fetching secrets from Secrets Manager)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     jq \
     tmux \
+    unzip \
+    && curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -o /tmp/awscliv2.zip \
+    && unzip -q /tmp/awscliv2.zip -d /tmp \
+    && /tmp/aws/install \
+    && rm -rf /tmp/aws /tmp/awscliv2.zip \
     && rm -rf /var/lib/apt/lists/*
 
 # Install gh CLI

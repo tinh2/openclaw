@@ -311,6 +311,22 @@ upsert_env() {
   mv "$tmp" "$file"
 }
 
+# Fetch GIT_PERSONAL_PROJECTS_TOKEN from AWS Secrets Manager if not already set.
+if [[ -z "${GIT_PERSONAL_PROJECTS_TOKEN:-}" ]] && command -v aws >/dev/null 2>&1; then
+  FETCHED_TOKEN="$(
+    aws secretsmanager get-secret-value \
+      --secret-id teambearie/Secrets \
+      --profile recipeai \
+      --query 'SecretString' --output text 2>/dev/null \
+    | python3 -c "import sys,json; print(json.load(sys.stdin).get('GIT_PERSONAL_PROJECTS_TOKEN',''))" 2>/dev/null \
+    || true
+  )"
+  if [[ -n "$FETCHED_TOKEN" ]]; then
+    export GIT_PERSONAL_PROJECTS_TOKEN="$FETCHED_TOKEN"
+    echo "Fetched GIT_PERSONAL_PROJECTS_TOKEN from AWS Secrets Manager (teambearie/Secrets)"
+  fi
+fi
+
 upsert_env "$ENV_FILE" \
   OPENCLAW_CONFIG_DIR \
   OPENCLAW_WORKSPACE_DIR \
@@ -321,7 +337,8 @@ upsert_env "$ENV_FILE" \
   OPENCLAW_IMAGE \
   OPENCLAW_EXTRA_MOUNTS \
   OPENCLAW_HOME_VOLUME \
-  OPENCLAW_DOCKER_APT_PACKAGES
+  OPENCLAW_DOCKER_APT_PACKAGES \
+  GIT_PERSONAL_PROJECTS_TOKEN
 
 if [[ "$IMAGE_NAME" == "openclaw:local" ]]; then
   echo "==> Building Docker image: $IMAGE_NAME"
